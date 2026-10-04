@@ -1,0 +1,15 @@
+# Swift
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+
+# Build output
+dist/
+
+# macOS
+.DS_Store
+
+# Secrets and local config
+.env
+*.local.json
