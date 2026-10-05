@@ -186,15 +186,20 @@ struct CategoryView: View {
             AmbientBackground(tint: category.tint)
 
             if items.isEmpty {
-                VStack {
+                // Pinned to the window's height: taller content would shift the whole window, sidebar included.
+                VStack(spacing: 0) {
                     header(items)
-                    Spacer()
-                    ContentUnavailableView(
-                        model.hasScanned ? "Nothing to clean" : "Scanning…",
-                        systemImage: model.hasScanned ? "checkmark.circle" : "magnifyingglass"
-                    )
-                    Spacer()
+                        .padding(.top, 4)
+                    VStack(spacing: 10) {
+                        Image(systemName: model.hasScanned ? "checkmark.circle" : "magnifyingglass")
+                            .font(.system(size: 36, weight: .light))
+                        Text(model.hasScanned ? "Nothing to clean" : "Scanning…")
+                            .font(.title3.weight(.semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             } else {
                 List {
                     header(items)
@@ -218,9 +223,11 @@ struct CategoryView: View {
             SymbolTile(symbol: category.symbol, tint: category.tint, size: 52)
             VStack(alignment: .leading, spacing: 4) {
                 Text(category.title).font(.title2.bold())
+                // Not fixedSize: measured at a tiny width while sizing the window, it grew tall
+                // enough to push the whole window's content, sidebar included, off screen.
                 Text(category.detail)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)
             }
             Spacer(minLength: 12)
             VStack(alignment: .trailing, spacing: 2) {
