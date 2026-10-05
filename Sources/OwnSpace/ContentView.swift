@@ -80,7 +80,7 @@ struct ContentView: View {
     private func row(_ category: JunkCategory) -> some View {
         let size = model.hasScanned ? model.result.size(of: category).bytes : nil
         return HStack(spacing: 10) {
-            SymbolTile(symbol: category.symbol, tint: category.tint, size: compact ? 28 : 22)
+            SymbolTile(symbol: category.symbol, tint: category.tint, size: 22)
             if !compact {
                 Text(category.title)
                 Spacer()
@@ -93,7 +93,7 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
-        .padding(.vertical, compact ? 4 : 2)
+        .padding(.vertical, 2)
         .help(compact ? [category.title, size].compactMap { $0 }.joined(separator: " · ") : "")
     }
 
