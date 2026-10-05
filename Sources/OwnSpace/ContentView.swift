@@ -10,22 +10,25 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             List(JunkCategory.allCases, selection: $category) { category in
-                HStack {
-                    Label(category.title, systemImage: category.symbol)
+                HStack(spacing: 10) {
+                    SymbolTile(symbol: category.symbol, tint: category.tint)
+                    Text(category.title)
                     Spacer()
                     if model.hasScanned {
                         Text(model.result.size(of: category).bytes)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
                 }
+                .padding(.vertical, 2)
                 .tag(category)
             }
-            .navigationSplitViewColumnWidth(min: 220, ideal: 240)
+            .navigationSplitViewColumnWidth(min: 230, ideal: 250)
             .safeAreaInset(edge: .bottom) { summary }
         } detail: {
             if let category {
-                CategoryView(category: category)
+                CategoryView(category: category, confirming: $confirming)
             } else {
                 ContentUnavailableView("Pick a category", systemImage: "sidebar.left")
             }
@@ -37,16 +40,8 @@ struct ContentView: View {
                 } label: {
                     Label("Scan Again", systemImage: "arrow.clockwise")
                 }
+                .help("Scan again (⌘R)")
                 .disabled(model.isBusy)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    confirming = true
-                } label: {
-                    Text(model.selection.isEmpty ? "Clean" : "Clean \(model.selectedSize.bytes)")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.selection.isEmpty || model.isBusy)
             }
         }
         .confirmationDialog(confirmTitle, isPresented: $confirming) {
@@ -66,12 +61,16 @@ struct ContentView: View {
     }
 
     private var summary: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if model.isBusy {
-                ProgressView().controlSize(.small)
-            } else if model.hasScanned {
-                Text("\(model.result.totalSize.bytes) found").font(.headline)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Found").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if model.isBusy { ProgressView().controlSize(.mini) }
             }
+            Text(model.hasScanned ? model.result.totalSize.bytes : "—")
+                .font(.system(.title, design: .rounded, weight: .semibold))
+                .monospacedDigit()
+                .contentTransition(.numericText())
             if !model.result.unreadable.isEmpty {
                 Button("Some folders need Full Disk Access") { openFullDiskAccess() }
                     .buttonStyle(.link)
@@ -79,7 +78,10 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
+        .padding(14)
+        .glassCard(cornerRadius: 18)
+        .padding(10)
+        .animation(.smooth, value: model.result.totalSize)
     }
 
     private var confirmTitle: String {
@@ -112,38 +114,110 @@ struct ContentView: View {
 struct CategoryView: View {
     @Environment(AppModel.self) private var model
     let category: JunkCategory
+    @Binding var confirming: Bool
 
     var body: some View {
         let items = model.result.items(in: category)
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(category.title).font(.title2.bold())
-                Text(category.detail).foregroundStyle(.secondary)
-            }
-            .padding()
+        ZStack {
+            AmbientBackground(tint: category.tint)
 
             if items.isEmpty {
-                ContentUnavailableView(
-                    model.hasScanned ? "Nothing to clean" : "Scanning…",
-                    systemImage: model.hasScanned ? "checkmark.circle" : "magnifyingglass"
-                )
-            } else {
-                HStack {
-                    Toggle("Select all", isOn: Binding(
-                        get: { items.allSatisfy { model.selection.contains($0.url) } },
-                        set: { model.selectAll(in: category, $0) }
-                    ))
+                VStack {
+                    header(items)
                     Spacer()
-                    Text("\(items.count) items").foregroundStyle(.secondary)
+                    ContentUnavailableView(
+                        model.hasScanned ? "Nothing to clean" : "Scanning…",
+                        systemImage: model.hasScanned ? "checkmark.circle" : "magnifyingglass"
+                    )
+                    Spacer()
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
-
-                List(items) { item in
-                    ItemRow(item: item)
+            } else {
+                List {
+                    header(items)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 12, trailing: 0))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                    ForEach(items) { item in
+                        ItemRow(item: item)
+                            .listRowBackground(Color.clear)
+                    }
                 }
+                .scrollContentBackground(.hidden)
+                // Items scroll under the floating bar, which is where glass shows best.
+                .safeAreaInset(edge: .bottom) { actionBar(items) }
             }
         }
+    }
+
+    private func header(_ items: [CleanupItem]) -> some View {
+        HStack(alignment: .center, spacing: 16) {
+            SymbolTile(symbol: category.symbol, tint: category.tint, size: 52)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(category.title).font(.title2.bold())
+                Text(category.detail)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(model.result.size(of: category).bytes)
+                    .font(.system(.title, design: .rounded, weight: .semibold))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                Text("\(items.count) item\(items.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(18)
+        .glassCard(cornerRadius: 22, tint: category.tint)
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+    }
+
+    private func actionBar(_ items: [CleanupItem]) -> some View {
+        let allSelected = items.allSatisfy { model.selection.contains($0.url) }
+        return GlassGroup(spacing: 10) {
+            HStack(spacing: 10) {
+                Button {
+                    model.selectAll(in: category, !allSelected)
+                } label: {
+                    Label(allSelected ? "Deselect All" : "Select All",
+                          systemImage: allSelected ? "checkmark.circle.fill" : "circle")
+                        .padding(.horizontal, 4)
+                }
+                .glassButton()
+                .controlSize(.large)
+
+                Spacer()
+
+                if !model.selection.isEmpty {
+                    Text("\(model.selection.count) selected")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                }
+
+                Button {
+                    confirming = true
+                } label: {
+                    Label(model.selection.isEmpty ? "Clean" : "Clean \(model.selectedSize.bytes)",
+                          systemImage: "sparkles")
+                        .padding(.horizontal, 6)
+                        .contentTransition(.numericText())
+                }
+                .glassButton(prominent: true)
+                .tint(category.tint)
+                .controlSize(.large)
+                .disabled(model.selection.isEmpty || model.isBusy)
+                .keyboardShortcut(.delete, modifiers: .command)
+            }
+            .padding(10)
+            .glassCard(cornerRadius: 26)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 14)
+        .animation(.smooth, value: model.selection)
     }
 }
 
@@ -152,23 +226,35 @@ struct ItemRow: View {
     let item: CleanupItem
 
     var body: some View {
-        HStack {
-            Toggle("", isOn: Binding(get: { model.selection.contains(item.url) }, set: { _ in model.toggle(item) }))
-                .labelsHidden()
-            Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
-                .resizable()
-                .frame(width: 20, height: 20)
-            VStack(alignment: .leading) {
-                Text(item.name).lineLimit(1)
-                Text(item.url.deletingLastPathComponent().path(percentEncoded: false))
-                    .font(.caption)
+        let selected = model.selection.contains(item.url)
+        Button {
+            model.toggle(item)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(selected ? AnyShapeStyle(item.category.tint) : AnyShapeStyle(.tertiary))
+                    .contentTransition(.symbolEffect(.replace))
+                Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+                    .resizable()
+                    .frame(width: 28, height: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name).lineLimit(1)
+                    Text(item.url.deletingLastPathComponent().path(percentEncoded: false))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer()
+                Text(item.size.bytes)
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
             }
-            Spacer()
-            Text(item.size.bytes).monospacedDigit().foregroundStyle(.secondary)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .contextMenu {
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
         }

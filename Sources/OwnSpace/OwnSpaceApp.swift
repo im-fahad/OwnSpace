@@ -15,9 +15,10 @@ struct OwnSpaceApp: App {
         WindowGroup("OwnSpace") {
             ContentView()
                 .environment(model)
-                .frame(minWidth: 760, minHeight: 480)
+                .frame(minWidth: 820, minHeight: 560)
                 .task { await model.scan() }
         }
+        .defaultSize(width: 1040, height: 720)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("Scan Again") { Task { await model.scan() } }
