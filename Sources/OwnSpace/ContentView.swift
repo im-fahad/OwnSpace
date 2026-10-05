@@ -6,26 +6,22 @@ struct ContentView: View {
     @Environment(AppModel.self) private var model
     @State private var category: JunkCategory? = .userCaches
     @State private var confirming = false
+    /// Collapsed, the sidebar keeps its icons instead of hiding.
+    @AppStorage("sidebarCompact") private var compact = false
+    @State private var visibility: NavigationSplitViewVisibility = .all
+    /// The window restores a narrow sidebar as hidden at launch; that is not the user clicking.
+    @State private var launched = false
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $visibility) {
             List(JunkCategory.allCases, selection: $category) { category in
-                HStack(spacing: 10) {
-                    SymbolTile(symbol: category.symbol, tint: category.tint)
-                    Text(category.title)
-                    Spacer()
-                    if model.hasScanned {
-                        Text(model.result.size(of: category).bytes)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
-                .padding(.vertical, 2)
-                .tag(category)
+                row(category)
+                    .tag(category)
             }
-            .navigationSplitViewColumnWidth(min: 230, ideal: 250)
             .safeAreaInset(edge: .bottom) { summary }
+            // The system button no longer fits beside the window controls once the sidebar is icons only.
+            .toolbar(removing: compact ? .sidebarToggle : nil)
+            .navigationSplitViewColumnWidth(min: compact ? 64 : 250, ideal: compact ? 64 : 260, max: compact ? 64 : 320)
         } detail: {
             if let category {
                 CategoryView(category: category, confirming: $confirming)
@@ -33,7 +29,28 @@ struct ContentView: View {
                 ContentUnavailableView("Pick a category", systemImage: "sidebar.left")
             }
         }
+        // The sidebar button and ⌃⌘S would hide the sidebar; switch between icons and full width instead.
+        .onChange(of: visibility) { _, newValue in
+            guard newValue == .detailOnly else { return }
+            visibility = .all
+            guard launched else { return }
+            withAnimation(.smooth) { compact.toggle() }
+        }
+        .task {
+            try? await Task.sleep(for: .seconds(1))
+            launched = true
+        }
         .toolbar {
+            if compact {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        withAnimation(.smooth) { compact = false }
+                    } label: {
+                        Label("Show Sidebar Titles", systemImage: "sidebar.left")
+                    }
+                    .help("Expand sidebar (⌃⌘S)")
+                }
+            }
             ToolbarItem {
                 Button {
                     Task { await model.scan() }
@@ -60,7 +77,54 @@ struct ContentView: View {
         }
     }
 
+    private func row(_ category: JunkCategory) -> some View {
+        let size = model.hasScanned ? model.result.size(of: category).bytes : nil
+        return HStack(spacing: 10) {
+            SymbolTile(symbol: category.symbol, tint: category.tint, size: compact ? 28 : 22)
+            if !compact {
+                Text(category.title)
+                Spacer()
+                if let size {
+                    Text(size)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
+        .padding(.vertical, compact ? 4 : 2)
+        .help(compact ? [category.title, size].compactMap { $0 }.joined(separator: " · ") : "")
+    }
+
+    @ViewBuilder
     private var summary: some View {
+        if compact {
+            VStack(spacing: 8) {
+                if !model.result.unreadable.isEmpty {
+                    Button(action: openFullDiskAccess) {
+                        Image(systemName: "exclamationmark.lock.fill").foregroundStyle(.yellow)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Some folders need Full Disk Access")
+                }
+                if model.isBusy {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text(model.hasScanned ? model.result.totalSize.bytes : "—")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .help("Found in total")
+                }
+            }
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+        } else {
+            fullSummary
+        }
+    }
+
+    private var fullSummary: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Found").font(.caption).foregroundStyle(.secondary)
